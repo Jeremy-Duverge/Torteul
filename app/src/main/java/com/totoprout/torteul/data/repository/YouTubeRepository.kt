@@ -1,6 +1,8 @@
 package com.totoprout.torteul.data.repository
 
+import android.content.Context
 import android.util.Log
+import android.widget.Toast
 import com.totoprout.torteul.data.local.TorteulDatabase
 import com.totoprout.torteul.data.local.entities.CategoryEntity
 import com.totoprout.torteul.data.local.entities.ChannelEntity
@@ -19,10 +21,10 @@ class YouTubeRepository(
     private val channelDao = db.channelDao()
     private val videoDao = db.videoDao()
 
-    suspend fun addChannel(handle: String, categoryId: Long) {
+    suspend fun addChannel(handle: String, categoryId: Long, context: Context) {
         try {
             Log.d("YouTubeRepository", "Adding channel: $handle")
-            
+
             // Ensure category exists to avoid FK constraint failure
             val categories = categoryDao.getAllCategories().first()
             if (categories.none { it.id == categoryId }) {
@@ -32,6 +34,12 @@ class YouTubeRepository(
 
             val channelUrl = if (handle.startsWith("https://")) handle else "https://www.youtube.com/$handle"
             val channelInfo = NewPipeService.getChannelInfo(channelUrl)
+
+            if (channelDao.getChannelsByCategory(categoryId).first().any { it.youtubeId == channelInfo?.id }) {
+                Log.d("YouTubeRepository", "Channel $handle already exists")
+                Toast.makeText(context, "Channel already exists", Toast.LENGTH_SHORT).show()
+                return
+            }
             
             if (channelInfo != null) {
                 Log.d("YouTubeRepository", "Found channel: ${channelInfo.name}")
@@ -41,13 +49,21 @@ class YouTubeRepository(
                     categoryId = categoryId
                 )
                 channelDao.insertChannel(channel)
+                Toast.makeText(context, "Channel added: ${channelInfo.name}", Toast.LENGTH_SHORT).show()
             } else {
                 Log.e("YouTubeRepository", "Channel not found or error occurred for $handle")
+                Toast.makeText(context, "Channel not found or error occurred", Toast.LENGTH_SHORT).show()
             }
         } catch (t: Throwable) {
             Log.e("YouTubeRepository", "Fatal error adding channel $handle", t)
+            Toast.makeText(context, "Fatal error adding channel $handle", Toast.LENGTH_SHORT).show()
         }
     }
+
+    fun getChannels(categoryId: Long): Flow<List<ChannelEntity>> {
+        return channelDao.getChannelsByCategory(categoryId)
+    }
+
 
     suspend fun refreshVideos(categoryId: Long) {
         try {

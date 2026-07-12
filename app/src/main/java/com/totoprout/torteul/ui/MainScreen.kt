@@ -1,5 +1,6 @@
 package com.totoprout.torteul.ui
 
+import android.content.Context
 import android.content.Intent
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -18,6 +19,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.totoprout.torteul.TorteulApplication
+import com.totoprout.torteul.data.local.entities.ChannelEntity
 import com.totoprout.torteul.data.local.entities.VideoEntity
 import com.totoprout.torteul.ui.viewmodel.YouTubeViewModel
 
@@ -48,7 +50,8 @@ fun MainScreen() {
                         putExtra("VIDEO_ID", videoId)
                     }
                     context.startActivity(intent)
-                }
+                },
+                context = context
             )
         }
         composable("alarms") {
@@ -102,7 +105,8 @@ fun HomeScreen(
 fun YouTubeScreen(
     viewModel: YouTubeViewModel,
     onBack: () -> Unit,
-    onPlayVideo: (String) -> Unit
+    onPlayVideo: (String) -> Unit,
+    context: Context
 ) {
     var selectedTab by remember { mutableIntStateOf(0) }
     val tabs = listOf("Search", "Channels", "Latest")
@@ -140,7 +144,7 @@ fun YouTubeScreen(
         Box(modifier = Modifier.padding(padding).fillMaxSize(), contentAlignment = Alignment.Center) {
             when (selectedTab) {
                 0 -> YouTubeSearchTab()
-                1 -> YouTubeChannelsTab(viewModel)
+                1 -> YouTubeChannelsTab(viewModel, context)
                 2 -> YouTubeLatestTab(viewModel, onPlayVideo)
             }
         }
@@ -156,10 +160,11 @@ fun YouTubeSearchTab() {
 }
 
 @Composable
-fun YouTubeChannelsTab(viewModel: YouTubeViewModel) {
+fun YouTubeChannelsTab(viewModel: YouTubeViewModel, context: Context) {
     var handle by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
+    val channels by viewModel.getChannels(1L).collectAsState()
 
     Box(modifier = Modifier.fillMaxSize()) {
         Column(
@@ -168,18 +173,18 @@ fun YouTubeChannelsTab(viewModel: YouTubeViewModel) {
         ) {
             Text("Channels Tab", style = MaterialTheme.typography.headlineMedium)
             Spacer(Modifier.height(16.dp))
-            
+
             OutlinedTextField(
                 value = handle,
                 onValueChange = { handle = it },
                 label = { Text("Channel Handle (e.g. @TheCherno)") },
                 modifier = Modifier.fillMaxWidth()
             )
-            
+
             Button(
-                onClick = { 
+                onClick = {
                     if (handle.isNotEmpty()) {
-                        viewModel.addChannel(handle, 1L) 
+                        viewModel.addChannel(handle, 1L, context)
                         handle = ""
                     }
                 },
@@ -190,12 +195,13 @@ fun YouTubeChannelsTab(viewModel: YouTubeViewModel) {
 
             Spacer(Modifier.height(16.dp))
 
-            Column(
-                modifier = Modifier.fillMaxSize().padding(16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+            LazyColumn(
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxSize()
             ) {
-                Text("Channels Tab", style = MaterialTheme.typography.headlineMedium)
-                Spacer(Modifier.height(16.dp))
+                items(channels, key = { it.youtubeId }) { channel ->
+                    ChannelItem(channel, onClick = {})
+                }
             }
         }
         
@@ -246,6 +252,23 @@ fun VideoItem(video: VideoEntity, onClick: () -> Unit) {
             Text(text = video.title, style = MaterialTheme.typography.bodyLarge)
             Text(
                 text = "ID: ${video.youtubeId}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+fun ChannelItem(channel: ChannelEntity, onClick: () -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth().clickable { onClick() },
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(text = channel.title, style = MaterialTheme.typography.bodyLarge)
+            Text(
+                text = "ID: ${channel.youtubeId}",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
