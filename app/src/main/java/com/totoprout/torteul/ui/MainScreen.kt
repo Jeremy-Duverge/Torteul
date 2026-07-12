@@ -2,10 +2,15 @@ package com.totoprout.torteul.ui
 
 import android.content.Context
 import android.content.Intent
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text2.input.rememberTextFieldState
+import androidx.compose.foundation.text2.input.setTextAndSelectAll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -14,6 +19,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -151,11 +157,51 @@ fun YouTubeScreen(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun YouTubeSearchTab() {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text("Search Tab", style = MaterialTheme.typography.headlineMedium)
         Text("Classical YouTube search page goes here.")
+        Spacer(Modifier.height(16.dp))
+        val textFieldState = rememberTextFieldState()
+        TextField(
+            value = textFieldState.text.toString(),
+            maxLines = 1,
+            placeholder = { Text("Search YouTube") },
+            modifier = Modifier.fillMaxWidth(),
+            onValueChange = { textFieldState.setTextAndSelectAll(it) },
+            singleLine = true,
+        )
+        Button(onClick = {
+            val url = "https://www.youtube.com/results?search_query=${
+                textFieldState.text.toString().replace(' ', '+')
+            }"
+            val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url))
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            intent.setPackage("com.google.android.youtube")
+        }) {
+            Text("Search")
+        }
+
+        val url = "https://www.youtube.com/results?search_query=coucou"
+        AndroidView(
+            factory = { context ->
+                WebView(context).apply {
+                    webViewClient = WebViewClient()
+                    settings.javaScriptEnabled = true
+                    settings.domStorageEnabled = true
+                    settings.loadWithOverviewMode = true
+                    settings.useWideViewPort = true
+                    loadUrl(url)
+                }
+            },
+            update = { webView ->
+                if (webView.url != url) {
+                    webView.loadUrl(url)
+                }
+            }
+        )
     }
 }
 
