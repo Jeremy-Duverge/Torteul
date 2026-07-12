@@ -19,10 +19,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.text2.input.rememberTextFieldState
-import androidx.compose.foundation.text2.input.setTextAndSelectAll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Person
@@ -42,7 +39,6 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextField
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -59,7 +55,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.navigation.compose.rememberNavController
 import com.totoprout.torteul.data.local.entities.ChannelEntity
 import com.totoprout.torteul.data.local.entities.VideoEntity
 import com.totoprout.torteul.ui.VideoPlayerActivity
@@ -146,33 +141,9 @@ fun YouTubeMainScreen() {
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun YouTubeSearchTab() {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text("Search Tab", style = MaterialTheme.typography.headlineMedium)
-        Text("Classical YouTube search page goes here.")
-        Spacer(Modifier.height(16.dp))
-        val textFieldState = rememberTextFieldState()
-        TextField(
-            value = textFieldState.text.toString(),
-            maxLines = 1,
-            placeholder = { Text("Search YouTube") },
-            modifier = Modifier.fillMaxWidth(),
-            onValueChange = { textFieldState.setTextAndSelectAll(it) },
-            singleLine = true,
-        )
-        Button(onClick = {
-            val url = "https://www.youtube.com/results?search_query=${
-                textFieldState.text.toString().replace(' ', '+')
-            }"
-            val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url))
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            intent.setPackage("com.google.android.youtube")
-        }) {
-            Text("Search")
-        }
-
-        val url = "https://www.youtube.com/results?search_query=coucou"
-        AndroidView(
-            factory = { context ->
+    val url = "https://www.youtube.com"
+    AndroidView(
+        factory = { context ->
                 WebView(context).apply {
                     webViewClient = WebViewClient()
                     settings.javaScriptEnabled = true
@@ -181,14 +152,13 @@ fun YouTubeSearchTab() {
                     settings.useWideViewPort = true
                     loadUrl(url)
                 }
-            },
-            update = { webView ->
-                if (webView.url != url) {
-                    webView.loadUrl(url)
-                }
+        },
+        update = { webView ->
+            if (webView.url != url) {
+                webView.loadUrl(url)
             }
-        )
-    }
+        }
+    )
 }
 
 @Composable
@@ -227,14 +197,7 @@ fun YouTubeChannelsTab(viewModel: YouTubeViewModel, context: Context) {
 
             Spacer(Modifier.height(16.dp))
 
-            LazyColumn(
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.fillMaxSize()
-            ) {
-                items(channels, key = { it.youtubeId }) { channel ->
-                    ChannelItem(channel, onClick = {})
-                }
-            }
+            ChannelList(channels)
         }
 
         SnackbarHost(
@@ -262,14 +225,31 @@ fun YouTubeLatestTab(viewModel: YouTubeViewModel, onPlayVideo: (String) -> Unit)
         if (videos.isEmpty()) {
             Text("No videos found. Try adding a channel first.")
         } else {
-            LazyColumn(
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.fillMaxSize()
-            ) {
-                items(videos, key = { it.youtubeId }) { video ->
-                    VideoItem(video, onClick = { onPlayVideo(video.youtubeId) })
-                }
-            }
+            VideoList(videos, onPlayVideo)
+        }
+    }
+}
+
+@Composable
+fun VideoList(videos: List<VideoEntity>, onPlayVideo: (String) -> Unit) {
+    LazyColumn(
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.fillMaxSize()
+    ) {
+        items(videos, key = { it.youtubeId }) { video ->
+            VideoItem(video, onClick = { onPlayVideo(video.youtubeId) })
+        }
+    }
+}
+
+@Composable
+fun ChannelList(channels: List<ChannelEntity>) {
+    LazyColumn(
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.fillMaxSize()
+    ) {
+        items(channels, key = { it.youtubeId }) { channel ->
+            ChannelItem(channel, onClick = {})
         }
     }
 }

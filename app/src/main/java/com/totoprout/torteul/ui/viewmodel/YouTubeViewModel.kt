@@ -9,7 +9,6 @@ import com.totoprout.torteul.data.local.entities.VideoEntity
 import com.totoprout.torteul.data.repository.YouTubeRepository
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
