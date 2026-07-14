@@ -7,21 +7,16 @@ import androidx.room.PrimaryKey
 
 @Entity(
     tableName = "videos",
-    foreignKeys = [
-        ForeignKey(
-            entity = ChannelEntity::class,
-            parentColumns = ["id"],
-            childColumns = ["channelId"],
-            onDelete = ForeignKey.CASCADE
-        )
-    ],
-    indices = [Index(value = ["channelId"])]
+    indices = [Index(value = ["channelId"]), Index(value = ["category"])]
 )
 data class VideoEntity(
-    @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    val youtubeId: String,
+    @PrimaryKey val id: String,
     val title: String,
     val publishedAt: Long, // Unix timestamp
-    val channelId: Long,
+    val channelId: String,
+    val thumbnailUrl: String,
+    val videoUrl: String,
+    val duration: Long, // Duration in seconds
+    var category: String = "",
     val rankScore: Float = 0f
 )

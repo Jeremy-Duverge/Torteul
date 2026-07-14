@@ -10,16 +10,16 @@ import androidx.room.PrimaryKey
     foreignKeys = [
         ForeignKey(
             entity = CategoryEntity::class,
-            parentColumns = ["id"],
-            childColumns = ["categoryId"],
+            parentColumns = ["name"],
+            childColumns = ["category"],
             onDelete = ForeignKey.SET_NULL
         )
     ],
-    indices = [Index(value = ["categoryId"])]
+    indices = [Index(value = ["category"])]
 )
 data class RuleEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val type: String, // e.g., "SUPPRESS_CHANNEL", "FILTER_KEYWORD"
     val pattern: String,
-    val categoryId: Long? = null
+    val category: String? = null
 )

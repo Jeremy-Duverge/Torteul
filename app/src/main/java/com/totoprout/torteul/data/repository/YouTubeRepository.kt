@@ -21,32 +21,59 @@ class YouTubeRepository(
     private val channelDao = db.channelDao()
     private val videoDao = db.videoDao()
 
-    suspend fun addChannel(handle: String, categoryId: Long, context: Context) {
+    fun getAllCategories(): Flow<List<CategoryEntity>> {
+        return categoryDao.getAllCategories()
+    }
+
+    fun getAllChannels(): Flow<List<ChannelEntity>> {
+        return channelDao.getAllChannels()
+    }
+
+    fun getChannelsByCategory(category: String): Flow<List<ChannelEntity>> {
+        return channelDao.getChannelsByCategory(category)
+    }
+
+    fun getAllVideos(): Flow<List<VideoEntity>> {
+        return videoDao.getAllVideos()
+    }
+
+    fun getVideosByChannel(channelId: String): Flow<List<VideoEntity>> {
+        return videoDao.getVideosByChannel(channelId)
+    }
+
+    fun getVideosByCategory(category: String): Flow<List<VideoEntity>> {
+        return videoDao.getRankedVideosByCategory(category)
+    }
+
+    fun getVideosByCategories(categories: List<String>): Flow<List<VideoEntity>> {
+        return videoDao.getVideosByCategories(categories)
+    }
+
+    suspend fun assignCategoryToChannel(channel: ChannelEntity, category: String) {
+        channel.category = category
+        channelDao.updateChannel(channel)
+        for (video in videoDao.getVideosByChannel(channel.id).first()) {
+            video.category = category
+            videoDao.updateVideo(video)
+        }
+    }
+
+    suspend fun addCategory(name: String) {
+        categoryDao.insertCategory(CategoryEntity(name))
+    }
+
+    suspend fun addChannel(handle: String, context: Context) {
         try {
             Log.d("YouTubeRepository", "Adding channel: $handle")
 
-            // Ensure category exists to avoid FK constraint failure
-            val categories = categoryDao.getAllCategories().first()
-            if (categories.none { it.id == categoryId }) {
-                Log.d("YouTubeRepository", "Category $categoryId not found, creating default")
-                categoryDao.insertCategory(CategoryEntity(id = categoryId, name = "Default", displayOrder = 0))
-            }
-
             val channelUrl = if (handle.startsWith("https://")) handle else "https://www.youtube.com/$handle"
             val channelInfo = NewPipeService.getChannelInfo(channelUrl)
-
-            if (channelDao.getChannelsByCategory(categoryId).first().any { it.youtubeId == channelInfo?.id }) {
-                Log.d("YouTubeRepository", "Channel $handle already exists")
-                Toast.makeText(context, "Channel already exists", Toast.LENGTH_SHORT).show()
-                return
-            }
             
             if (channelInfo != null) {
                 Log.d("YouTubeRepository", "Found channel: ${channelInfo.name}")
                 val channel = ChannelEntity(
-                    youtubeId = channelInfo.id,
-                    title = channelInfo.name,
-                    categoryId = categoryId
+                    id = channelInfo.id,
+                    title = channelInfo.name
                 )
                 channelDao.insertChannel(channel)
                 Toast.makeText(context, "Channel added: ${channelInfo.name}", Toast.LENGTH_SHORT).show()
@@ -60,18 +87,13 @@ class YouTubeRepository(
         }
     }
 
-    fun getChannels(categoryId: Long): Flow<List<ChannelEntity>> {
-        return channelDao.getChannelsByCategory(categoryId)
-    }
-
-
-    suspend fun refreshVideos(categoryId: Long) {
+    suspend fun refreshVideos() {
         try {
-            val channels = channelDao.getChannelsByCategory(categoryId).first()
+            val channels = channelDao.getAllChannels().first()
             for (channel in channels) {
                 try {
-                    val rssVideos = RssService.getLatestVideos(channel.youtubeId, client)
-                    val updatedVideos = rssVideos.map { it.copy(channelId = channel.id) }
+                    val rssVideos = RssService.getLatestVideos(channel.id, client)
+                    val updatedVideos = rssVideos.map { it.copy(channelId = channel.id, category = channel.category) }
                     videoDao.insertVideos(updatedVideos)
                 } catch (t: Throwable) {
                     Log.e("YouTubeRepository", "Error refreshing videos for channel ${channel.title}", t)
@@ -80,9 +102,5 @@ class YouTubeRepository(
         } catch (t: Throwable) {
             Log.e("YouTubeRepository", "Fatal error in refreshVideos", t)
         }
-    }
-
-    fun getVideos(categoryId: Long): Flow<List<VideoEntity>> {
-        return videoDao.getRankedVideosByCategory(categoryId)
     }
 }

@@ -1,22 +1,32 @@
 package com.totoprout.torteul.data.local.dao
 
 import androidx.room.*
+import com.totoprout.torteul.data.local.entities.CategoryEntity
+import com.totoprout.torteul.data.local.entities.ChannelEntity
 import com.totoprout.torteul.data.local.entities.VideoEntity
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface VideoDao {
-    @Query("""
-        SELECT v.* FROM videos v
-        INNER JOIN channels c ON v.channelId = c.id
-        WHERE c.categoryId = :categoryId
-        ORDER BY v.rankScore DESC, v.publishedAt DESC
-    """)
-    fun getRankedVideosByCategory(categoryId: Long): Flow<List<VideoEntity>>
+    @Query("SELECT * FROM videos ORDER BY publishedAt DESC")
+    fun getAllVideos(): Flow<List<VideoEntity>>
+
+    @Query("SELECT * FROM videos WHERE channelId = :channelId ORDER BY publishedAt DESC")
+    fun getVideosByChannel(channelId: String): Flow<List<VideoEntity>>
+
+    @Query("SELECT * FROM videos WHERE category = :category ORDER BY publishedAt DESC")
+    fun getRankedVideosByCategory(category: String): Flow<List<VideoEntity>>
+
+    @Query("SELECT * FROM videos WHERE category IN (:categories) ORDER BY publishedAt DESC")
+    fun getVideosByCategories(categories: List<String>): Flow<List<VideoEntity>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertVideos(videos: List<VideoEntity>)
 
-    @Query("DELETE FROM videos WHERE channelId IN (SELECT id FROM channels WHERE categoryId = :categoryId)")
-    suspend fun deleteVideosByCategory(categoryId: Long)
+    @Update
+    suspend fun updateVideo(video: VideoEntity)
+
+    @Query("DELETE FROM videos WHERE id = :id")
+    suspend fun deleteVideosById(id: String)
 }

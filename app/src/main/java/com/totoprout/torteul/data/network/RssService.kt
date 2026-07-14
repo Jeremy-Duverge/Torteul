@@ -20,11 +20,11 @@ object RssService {
         
         client.newCall(request).execute().use { response ->
             val inputStream = response.body?.byteStream() ?: return@withContext emptyList()
-            parse(inputStream, -1L) // channelPk is filled later by Repository
+            parse(inputStream, "") // channelPk is filled later by Repository
         }
     }
 
-    private fun parse(inputStream: InputStream, channelPk: Long): List<VideoEntity> {
+    private fun parse(inputStream: InputStream, channelPk: String): List<VideoEntity> {
         val parser = Xml.newPullParser()
         parser.setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, true)
         parser.setInput(inputStream, null)
@@ -32,7 +32,7 @@ object RssService {
         return readFeed(parser, channelPk)
     }
 
-    private fun readFeed(parser: XmlPullParser, channelPk: Long): List<VideoEntity> {
+    private fun readFeed(parser: XmlPullParser, channelPk: String): List<VideoEntity> {
         val entries = mutableListOf<VideoEntity>()
         parser.require(XmlPullParser.START_TAG, ns, "feed")
         while (parser.next() != XmlPullParser.END_TAG) {
@@ -46,7 +46,7 @@ object RssService {
         return entries
     }
 
-    private fun readEntry(parser: XmlPullParser, channelPk: Long): VideoEntity {
+    private fun readEntry(parser: XmlPullParser, channelPk: String): VideoEntity {
         parser.require(XmlPullParser.START_TAG, ns, "entry")
         var youtubeId = ""
         var title = ""
@@ -66,10 +66,14 @@ object RssService {
             }
         }
         return VideoEntity(
-            youtubeId = youtubeId,
+            id = youtubeId,
             title = title,
             publishedAt = publishedAt,
-            channelId = channelPk
+            channelId = channelPk,
+            thumbnailUrl = "",
+            videoUrl = "",
+            duration = 0,
+            category = ""
         )
     }
 
