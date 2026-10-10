@@ -1,463 +1,413 @@
+@file:OptIn(ExperimentalMaterial3Api::class)
+
 package com.totoprout.torteul.ui.screens
 
+import android.content.ActivityNotFoundException
+import android.content.Context
 import android.content.Intent
-import android.webkit.WebView
-import android.webkit.WebViewClient
-import android.widget.EditText
+import android.text.format.DateUtils
+import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
-import androidx.compose.ui.window.Dialog
+import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import com.totoprout.torteul.TorteulApplication
+import com.totoprout.torteul.data.local.FeedItem
+import com.totoprout.torteul.data.local.entities.CategoryEntity
 import com.totoprout.torteul.data.local.entities.ChannelEntity
-import com.totoprout.torteul.data.local.entities.VideoEntity
-import com.totoprout.torteul.ui.VideoPlayerActivity
 import com.totoprout.torteul.ui.viewmodel.YouTubeViewModel
+import kotlinx.coroutines.launch
 
+private const val NEWPIPE_PACKAGE = "org.schabi.newpipe"
 
-@OptIn(ExperimentalMaterial3Api::class)
+private enum class Tab(val label: String, val icon: ImageVector) {
+    Feed("Feed", Icons.Default.Home),
+    Channels("Channels", Icons.Default.Person),
+    Categories("Categories", Icons.AutoMirrored.Filled.List),
+}
+
 @Composable
-fun YouTubeMainScreen(
-    navController: NavController
-) {
+fun YouTubeMainScreen(navController: NavController) {
     val context = LocalContext.current
     val app = context.applicationContext as TorteulApplication
-    val youtubeViewModel: YouTubeViewModel = viewModel(
-        factory = YouTubeViewModel.Factory(app.youtubeRepository)
-    )
-    var selectedTab by remember { mutableIntStateOf(1) }
-    val tabs = listOf("Search", "Home", "Latest")
+    val viewModel: YouTubeViewModel = viewModel(factory = YouTubeViewModel.Factory(app.youtubeRepository))
+    val refreshing by viewModel.refreshing.collectAsStateWithLifecycle()
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    var tab by rememberSaveable { mutableStateOf(Tab.Feed) }
+    var menuOpen by remember { mutableStateOf(false) }
+
+    val exportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri -> uri?.let(viewModel::exportTo) }
+    val importLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri -> uri?.let(viewModel::importFrom) }
+
+    LaunchedEffect(viewModel) {
+        viewModel.messages.collect { snackbarHostState.showSnackbar(it) }
+    }
+    BackHandler(enabled = tab != Tab.Feed) { tab = Tab.Feed }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("YouTube Sub-App") },
+                title = { Text("YouTube") },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.Default.Home, contentDescription = "Home")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
-                }
+                },
+                actions = {
+                    IconButton(onClick = viewModel::refresh, enabled = !refreshing) {
+                        Icon(Icons.Default.Refresh, contentDescription = "Refresh")
+                    }
+                    Box {
+                        IconButton(onClick = { menuOpen = true }) {
+                            Icon(Icons.Default.MoreVert, contentDescription = "More")
+                        }
+                        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                            DropdownMenuItem(
+                                text = { Text("Export subscriptions") },
+                                onClick = {
+                                    menuOpen = false
+                                    exportLauncher.launch("torteul-subscriptions.json")
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Import subscriptions") },
+                                onClick = {
+                                    menuOpen = false
+                                    importLauncher.launch(arrayOf("*/*"))
+                                },
+                            )
+                        }
+                    }
+                },
             )
         },
         bottomBar = {
             NavigationBar {
-                tabs.forEachIndexed { index, title ->
+                Tab.entries.forEach { item ->
                     NavigationBarItem(
-                        selected = selectedTab == index,
-                        onClick = { selectedTab = index },
-                        label = { Text(title) },
-                        icon = {
-                            when (index) {
-                                0 -> Icon(Icons.Default.Search, contentDescription = null)
-                                1 -> Icon(Icons.Default.Home, contentDescription = null)
-                                2 -> Icon(Icons.Default.DateRange, contentDescription = null)
-                            }
-                        }
+                        selected = tab == item,
+                        onClick = { tab = item },
+                        icon = { Icon(item.icon, contentDescription = null) },
+                        label = { Text(item.label) },
                     )
                 }
-            }
-        }
-    ) { padding ->
-        Box(modifier = Modifier
-            .padding(padding)
-            .fillMaxSize()) {
-            when (selectedTab) {
-                0 -> YouTubeSearchTab()
-                1 -> YouTubeHomeTab(youtubeViewModel)
-                2 -> YouTubeLatestTab(youtubeViewModel)
-            }
-        }
-    }
-}
-
-@Composable
-fun YouTubeSearchTab() {
-    val url = "https://www.youtube.com/results?search_query=climbing"
-    AndroidView(
-        factory = { context ->
-            WebView(context).apply {
-                webViewClient = WebViewClient()
-                settings.javaScriptEnabled = true
-                settings.domStorageEnabled = true
-                loadUrl(url)
             }
         },
-        modifier = Modifier.fillMaxSize()
-    )
-}
-
-@Composable
-fun YouTubeHomeTab(viewModel: YouTubeViewModel) {
-    var homeTab by remember { mutableStateOf("grid") }
-
-    when (homeTab) {
-        "grid" -> YouTubeHomeGridTab(onNavigate = { homeTab = it })
-        "categories" -> YouTubeCategoriesTab(viewModel, onBack = { homeTab = "grid" })
-        "channels" -> YouTubeChannelsTab(viewModel, onBack = { homeTab = "grid" })
-        "videos" -> YouTubeVideosTab(viewModel, onBack = { homeTab = "grid" })
-    }
-}
-
-@Composable
-fun YouTubeHomeGridTab(onNavigate: (String) -> Unit) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Button(
-            onClick = { onNavigate("categories") },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(100.dp)
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+    ) { padding ->
+        Column(
+            Modifier
+                .padding(padding)
+                .fillMaxSize()
         ) {
-            Icon(Icons.Default.PlayArrow, contentDescription = null)
-            Spacer(Modifier.padding(8.dp))
-            Text("Categories", style = MaterialTheme.typography.headlineSmall)
-        }
-        Button(
-            onClick = { onNavigate("channels") },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(100.dp)
-        ) {
-            Icon(Icons.Default.PlayArrow, contentDescription = null)
-            Spacer(Modifier.padding(8.dp))
-            Text("Channels", style = MaterialTheme.typography.headlineSmall)
-        }
-        Button(
-            onClick = { onNavigate("videos") },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(100.dp)
-        ) {
-            Icon(Icons.Default.PlayArrow, contentDescription = null)
-            Spacer(Modifier.padding(8.dp))
-            Text("Videos", style = MaterialTheme.typography.headlineSmall)
-        }
-    }
-}
-
-@Composable
-fun Form(label: String, buttonLabel: String, onClick: (String) -> Unit) {
-    var handle by remember { mutableStateOf("") }
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        OutlinedTextField(
-            value = handle,
-            onValueChange = { handle = it },
-            label = { Text(label) },
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        Button(
-            onClick = { if (handle.isNotEmpty()) { onClick(handle) ; handle = ""  }},
-            modifier = Modifier.padding(top = 8.dp)
-        ) {
-            Text(buttonLabel)
-        }
-    }
-}
-
-@Composable
-fun YouTubeChannelsTab(viewModel: YouTubeViewModel, onBack: () -> Unit) {
-    val channels by viewModel.channels.collectAsStateWithLifecycle()
-    val context = LocalContext.current
-    var selectedChannelForDetails by remember { mutableStateOf<ChannelEntity?>(null) }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onBack) {
-                Icon(Icons.Default.PlayArrow, contentDescription = "Back", modifier = Modifier.aspectRatio(1f))
+            if (refreshing) LinearProgressIndicator(Modifier.fillMaxWidth())
+            when (tab) {
+                Tab.Feed -> FeedTab(viewModel) { videoId ->
+                    if (!openInNewPipe(context, videoId)) {
+                        scope.launch { snackbarHostState.showSnackbar("Install NewPipe (F-Droid) to play videos") }
+                    }
+                }
+                Tab.Channels -> ChannelsTab(viewModel)
+                Tab.Categories -> CategoriesTab(viewModel)
             }
-            Text("Channels", style = MaterialTheme.typography.headlineMedium)
-        }
-
-        Spacer(Modifier.height(16.dp))
-
-        Form("Channel Handle (e.g. @TheCherno)", "Add Channel"
-        ) { handle -> viewModel.addChannel(handle, context) }
-
-        Spacer(Modifier.height(16.dp))
-
-        ChannelList(channels) { channel ->
-            selectedChannelForDetails = channel
-        }
-    }
-
-    selectedChannelForDetails?.let { channel ->
-        Dialog(onDismissRequest = { selectedChannelForDetails = null }) {
-            ChannelDetailsCard(channel)
         }
     }
 }
 
 @Composable
-fun YouTubeCategoriesTab(viewModel: YouTubeViewModel, onBack: () -> Unit) {
+private fun FeedTab(viewModel: YouTubeViewModel, onPlay: (String) -> Unit) {
     val categories by viewModel.categories.collectAsStateWithLifecycle()
+    val selected by viewModel.selectedCategories.collectAsStateWithLifecycle()
+    val feed by viewModel.feed.collectAsStateWithLifecycle()
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onBack) {
-                Icon(Icons.Default.PlayArrow, contentDescription = "Back")
-            }
-            Text("Categories", style = MaterialTheme.typography.headlineMedium)
-        }
-
-        Spacer(Modifier.height(16.dp))
-
-        Form("Category Name (e.g. \"Climbing\")", "Add Category", { handle -> viewModel.addCategory(handle) })
-
-        Spacer(Modifier.height(16.dp))
-
-        LazyColumn(
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.fillMaxSize()
-        ) {
-            items(categories, key = { it.name }) { category ->
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-                ) {
-                    Text(
-                        text = category.name,
-                        modifier = Modifier.padding(16.dp),
-                        style = MaterialTheme.typography.bodyLarge
+    Column(Modifier.fillMaxSize()) {
+        if (categories.isNotEmpty()) {
+            LazyRow(
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                items(categories, key = { it.name }) { category ->
+                    FilterChip(
+                        selected = category.name in selected,
+                        onClick = { viewModel.toggleCategory(category.name) },
+                        label = { Text(category.name) },
                     )
                 }
             }
         }
-    }
-}
-
-@Composable
-fun YouTubeVideosTab(viewModel: YouTubeViewModel, onBack: () -> Unit) {
-    val categories by viewModel.categories.collectAsStateWithLifecycle()
-    val selectedCategories by viewModel.selectedCategories.collectAsStateWithLifecycle()
-    val videos by viewModel.filteredVideos.collectAsStateWithLifecycle()
-    val context = LocalContext.current
-
-    Column(modifier = Modifier.fillMaxSize()) {
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(16.dp)) {
-            IconButton(onClick = onBack) {
-                Icon(Icons.Default.PlayArrow, contentDescription = "Back")
+        if (feed.isEmpty()) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .padding(32.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text("No videos yet. Add channels in the Channels tab.")
             }
-            Text("Videos", style = MaterialTheme.typography.headlineMedium)
-        }
-
-        LazyRow(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            items(categories, key = { it.name }) { category ->
-                val isSelected = selectedCategories.contains(category.name)
-                Button(
-                    onClick = { viewModel.toggleCategory(category.name) },
-                    colors = if (isSelected) ButtonDefaults.buttonColors() else ButtonDefaults.outlinedButtonColors()
-                ) {
-                    Text(category.name)
+        } else {
+            LazyColumn(
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                items(feed, key = { it.video.id }) { item ->
+                    VideoCard(item, onClick = { onPlay(item.video.id) })
                 }
             }
         }
-
-        Spacer(Modifier.height(16.dp))
-
-        VideoList(videos) { videoId ->
-            val intent = Intent(context, VideoPlayerActivity::class.java)
-            intent.putExtra("videoId", videoId)
-            context.startActivity(intent)
-        }
     }
 }
 
 @Composable
-fun YouTubeLatestTab(viewModel: YouTubeViewModel) {
-    val videos by viewModel.allVideos.collectAsStateWithLifecycle()
-    val context = LocalContext.current
-
-    LaunchedEffect(Unit) {
-        viewModel.refreshVideos()
-    }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Text("Latest Videos", style = MaterialTheme.typography.headlineMedium)
-        Spacer(Modifier.height(16.dp))
-
-        if (videos.isEmpty()) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("No videos found. Try adding a channel first.")
-            }
-        } else {
-            VideoList(videos) { videoId ->
-                val intent = Intent(context, VideoPlayerActivity::class.java)
-                intent.putExtra("videoId", videoId)
-                context.startActivity(intent)
-            }
-        }
-    }
-}
-
-@Composable
-fun VideoList(videos: List<VideoEntity>, onPlayVideo: (String) -> Unit) {
-    LazyColumn(
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 16.dp)
-    ) {
-        items(videos, key = { it.id }) { video ->
-            VideoItem(video, onClick = { onPlayVideo(video.id) })
-        }
-    }
-}
-
-@Composable
-fun ChannelList(channels: List<ChannelEntity>, onClick: (ChannelEntity) -> Unit = { } ) {
-    LazyColumn(
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-        modifier = Modifier.fillMaxSize()
-    ) {
-        items(channels, key = { it.id }) { channel ->
-            ChannelItem(channel, onClick = { onClick(channel) })
-        }
-    }
-}
-
-@Composable
-fun ChannelDetailsCard(channel: ChannelEntity) {
-    val context = LocalContext.current
-    val app = context.applicationContext as TorteulApplication
-    val youtubeViewModel: YouTubeViewModel = viewModel(
-        factory = YouTubeViewModel.Factory(app.youtubeRepository)
-    )
+private fun VideoCard(item: FeedItem, onClick: () -> Unit) {
     Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(text = channel.title, style = MaterialTheme.typography.titleMedium)
-            Text(text = "ID: ${channel.id}", style = MaterialTheme.typography.bodySmall)
-            Text(text = "Category: ${channel.category}", style = MaterialTheme.typography.bodySmall)
-            Form("Existing category Name (e.g. \"Climbing\")", "Set Category", { handle -> youtubeViewModel.assignCategoryToChannel(channel, handle) })
-        }
-    }
-}
-
-@Composable
-fun VideoItem(video: VideoEntity, onClick: () -> Unit) {
-    Card(
-        modifier = Modifier
+        Modifier
             .fillMaxWidth()
-            .clickable { onClick() },
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+            .clickable(onClick = onClick)
     ) {
-        Column {
-            AsyncImage(
-                model = video.thumbnailUrl,
-                contentDescription = null,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(16f / 9f),
-                contentScale = ContentScale.Crop
-            )
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text(text = video.title, style = MaterialTheme.typography.titleMedium)
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    text = "Category: ${video.category.ifEmpty { "None" }}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-    }
-}
-
-@Composable
-fun ChannelItem(channel: ChannelEntity, onClick: () -> Unit) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onClick() },
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(text = channel.title, style = MaterialTheme.typography.titleMedium)
+        AsyncImage(
+            model = item.video.thumbnailUrl,
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(16f / 9f),
+        )
+        Column(Modifier.padding(12.dp)) {
             Text(
-                text = "ID: ${channel.id}",
+                item.video.title,
+                style = MaterialTheme.typography.titleMedium,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                listOf(item.channelTitle, item.category, relativeTime(item.video.publishedAt))
+                    .filter { it.isNotEmpty() }
+                    .joinToString(" · "),
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }
+}
+
+@Composable
+private fun ChannelsTab(viewModel: YouTubeViewModel) {
+    val channels by viewModel.channels.collectAsStateWithLifecycle()
+    val categories by viewModel.categories.collectAsStateWithLifecycle()
+    var editingId by rememberSaveable { mutableStateOf<String?>(null) }
+
+    Column(Modifier.fillMaxSize()) {
+        AddRow(label = "@handle, channel URL or ID", onAdd = viewModel::addChannel)
+        LazyColumn(
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            items(channels, key = { it.id }) { channel ->
+                Card(
+                    Modifier
+                        .fillMaxWidth()
+                        .clickable { editingId = channel.id }
+                ) {
+                    Column(Modifier.padding(16.dp)) {
+                        Text(channel.title, style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            channel.category.ifEmpty { "No category" },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    channels.find { it.id == editingId }?.let { channel ->
+        ChannelDialog(
+            channel = channel,
+            categories = categories,
+            onCategory = { viewModel.setCategory(channel, it) },
+            onUnsubscribe = {
+                viewModel.unsubscribe(channel)
+                editingId = null
+            },
+            onDismiss = { editingId = null },
+        )
+    }
+}
+
+@Composable
+private fun ChannelDialog(
+    channel: ChannelEntity,
+    categories: List<CategoryEntity>,
+    onCategory: (String) -> Unit,
+    onUnsubscribe: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(channel.title) },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                (listOf("") + categories.map { it.name }).forEach { name ->
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .selectable(selected = channel.category == name, onClick = { onCategory(name) })
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RadioButton(selected = channel.category == name, onClick = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text(name.ifEmpty { "No category" })
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Done") }
+        },
+        dismissButton = {
+            TextButton(onClick = onUnsubscribe) {
+                Text("Unsubscribe", color = MaterialTheme.colorScheme.error)
+            }
+        },
+    )
+}
+
+@Composable
+private fun CategoriesTab(viewModel: YouTubeViewModel) {
+    val categories by viewModel.categories.collectAsStateWithLifecycle()
+
+    Column(Modifier.fillMaxSize()) {
+        AddRow(label = "New category", onAdd = viewModel::addCategory)
+        LazyColumn(
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            items(categories, key = { it.name }) { category ->
+                Card(Modifier.fillMaxWidth()) {
+                    Row(
+                        Modifier.padding(start = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(category.name, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
+                        IconButton(onClick = { viewModel.deleteCategory(category) }) {
+                            Icon(Icons.Default.Delete, contentDescription = "Delete ${category.name}")
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AddRow(label: String, onAdd: (String) -> Unit) {
+    var text by rememberSaveable { mutableStateOf("") }
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        OutlinedTextField(
+            value = text,
+            onValueChange = { text = it },
+            label = { Text(label) },
+            singleLine = true,
+            modifier = Modifier.weight(1f),
+        )
+        Spacer(Modifier.width(8.dp))
+        Button(
+            onClick = {
+                onAdd(text.trim())
+                text = ""
+            },
+            enabled = text.isNotBlank(),
+        ) { Text("Add") }
+    }
+}
+
+private fun relativeTime(epochMillis: Long): String =
+    DateUtils.getRelativeTimeSpanString(epochMillis, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS)
+        .toString()
+
+private fun openInNewPipe(context: Context, videoId: String): Boolean = try {
+    context.startActivity(
+        Intent(Intent.ACTION_VIEW, "https://www.youtube.com/watch?v=$videoId".toUri())
+            .setPackage(NEWPIPE_PACKAGE)
+    )
+    true
+} catch (e: ActivityNotFoundException) {
+    false
 }

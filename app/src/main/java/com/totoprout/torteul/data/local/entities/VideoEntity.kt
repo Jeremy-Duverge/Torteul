@@ -7,7 +7,7 @@ import androidx.room.PrimaryKey
 
 @Entity(
     tableName = "videos",
-    indices = [Index(value = ["channelId"]), Index(value = ["category"])]
+    indices = [Index(value = ["channelId"])]
 )
 data class VideoEntity(
     @PrimaryKey val id: String,
@@ -15,8 +15,4 @@ data class VideoEntity(
     val publishedAt: Long, // Unix timestamp
     val channelId: String,
     val thumbnailUrl: String,
-    val videoUrl: String,
-    val duration: Long, // Duration in seconds
-    var category: String = "",
-    val rankScore: Float = 0f
 )

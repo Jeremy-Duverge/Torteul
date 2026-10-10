@@ -14,7 +14,8 @@ import com.totoprout.torteul.data.local.entities.*
         VideoEntity::class,
         RuleEntity::class
     ],
-    version = 1,
+    // Bumping the version wipes the DB; YouTubeRepository.restoreIfEmpty() brings subscriptions back.
+    version = 2,
     exportSchema = false
 )
 abstract class TorteulDatabase : RoomDatabase() {
@@ -33,7 +34,9 @@ abstract class TorteulDatabase : RoomDatabase() {
                     context.applicationContext,
                     TorteulDatabase::class.java,
                     "torteul_database"
-                ).build()
+                )
+                    .fallbackToDestructiveMigration()
+                    .build()
                 INSTANCE = instance
                 instance
             }

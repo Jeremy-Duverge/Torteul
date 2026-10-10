@@ -6,18 +6,15 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface CategoryDao {
-    @Query("SELECT * FROM categories")
+    @Query("SELECT * FROM categories ORDER BY name COLLATE NOCASE")
     fun getAllCategories(): Flow<List<CategoryEntity>>
-
-    @Query("SELECT * FROM categories WHERE name = :name")
-    fun getCategoryByName(name: String): CategoryEntity?
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertCategory(category: CategoryEntity): Long
 
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertCategories(categories: List<CategoryEntity>)
+
     @Delete
     suspend fun deleteCategory(category: CategoryEntity)
-
-    @Update
-    suspend fun updateCategory(category: CategoryEntity)
 }

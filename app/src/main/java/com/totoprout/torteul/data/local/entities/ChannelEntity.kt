@@ -12,5 +12,5 @@ import androidx.room.PrimaryKey
 data class ChannelEntity(
     @PrimaryKey val id: String,
     val title: String,
-    var category: String = "",
+    val category: String = "",
 )

@@ -6,6 +6,7 @@ import okhttp3.Request
 import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.schabi.newpipe.extractor.downloader.Downloader
+import org.schabi.newpipe.extractor.exceptions.ReCaptchaException
 import org.schabi.newpipe.extractor.downloader.Request as NewPipeRequest
 import org.schabi.newpipe.extractor.downloader.Response as NewPipeResponse
 import java.io.IOException
@@ -38,6 +39,9 @@ class OkHttpDownloader(private val client: OkHttpClient) : Downloader() {
         val okHttpRequest = builder.build()
 
         client.newCall(okHttpRequest).execute().use { response ->
+            if (response.code == 429) {
+                throw ReCaptchaException("YouTube is rate-limiting requests", url)
+            }
             return NewPipeResponse(
                 response.code,
                 response.message,

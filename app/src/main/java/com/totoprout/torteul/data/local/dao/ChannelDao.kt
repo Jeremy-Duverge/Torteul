@@ -1,27 +1,29 @@
 package com.totoprout.torteul.data.local.dao
 
 import androidx.room.*
-import com.totoprout.torteul.data.local.entities.CategoryEntity
 import com.totoprout.torteul.data.local.entities.ChannelEntity
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.first
 
 @Dao
 interface ChannelDao {
-    @Query("SELECT * FROM channels WHERE id = :id")
-    fun getChannelById(id: String): Flow<ChannelEntity>
-
-    @Query("SELECT * FROM channels")
+    @Query("SELECT * FROM channels ORDER BY title COLLATE NOCASE")
     fun getAllChannels(): Flow<List<ChannelEntity>>
 
-    @Query("SELECT * FROM channels WHERE category = :category")
-    fun getChannelsByCategory(category: String): Flow<List<ChannelEntity>>
+    @Query("SELECT COUNT(*) FROM channels")
+    suspend fun count(): Int
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    // IGNORE keeps the category when an existing channel is added again.
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertChannel(channel: ChannelEntity): Long
 
-    @Update
-    suspend fun updateChannel(channel: ChannelEntity)
+    @Upsert
+    suspend fun upsertChannels(channels: List<ChannelEntity>)
+
+    @Query("UPDATE channels SET category = :category WHERE id = :id")
+    suspend fun setCategory(id: String, category: String)
+
+    @Query("UPDATE channels SET category = '' WHERE category = :category")
+    suspend fun clearCategory(category: String)
 
     @Delete
     suspend fun deleteChannel(channel: ChannelEntity)

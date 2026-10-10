@@ -7,95 +7,78 @@ import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.xmlpull.v1.XmlPullParser
+import java.io.IOException
 import java.io.InputStream
+import java.time.OffsetDateTime
 
 object RssService {
-    private val ns: String? = null
-    private val ytNs = "http://www.youtube.com/xml/schemas/2015"
-    private val mediaNs = "http://search.yahoo.com/mrss/"
+    private const val FEED_URL = "https://www.youtube.com/feeds/videos.xml?channel_id="
+    private const val ATOM = "http://www.w3.org/2005/Atom"
+    private const val YT = "http://www.youtube.com/xml/schemas/2015"
+    private const val MEDIA = "http://search.yahoo.com/mrss/"
 
-    suspend fun getLatestVideos(channelId: String, client: OkHttpClient): List<VideoEntity> = withContext(Dispatchers.IO) {
-        val url = "https://www.youtube.com/feeds/videos.xml?channel_id=$channelId"
-        val request = Request.Builder().url(url).build()
-        
-        client.newCall(request).execute().use { response ->
-            val inputStream = response.body?.byteStream() ?: return@withContext emptyList()
-            parse(inputStream, "") // channelPk is filled later by Repository
-        }
-    }
-
-    private fun parse(inputStream: InputStream, channelPk: String): List<VideoEntity> {
-        val parser = Xml.newPullParser()
-        parser.setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, true)
-        parser.setInput(inputStream, null)
-        parser.nextTag()
-        return readFeed(parser, channelPk)
-    }
-
-    private fun readFeed(parser: XmlPullParser, channelPk: String): List<VideoEntity> {
-        val entries = mutableListOf<VideoEntity>()
-        parser.require(XmlPullParser.START_TAG, ns, "feed")
-        while (parser.next() != XmlPullParser.END_TAG) {
-            if (parser.eventType != XmlPullParser.START_TAG) continue
-            if (parser.name == "entry") {
-                entries.add(readEntry(parser, channelPk))
-            } else {
-                skip(parser)
-            }
-        }
-        return entries
-    }
-
-    private fun readEntry(parser: XmlPullParser, channelPk: String): VideoEntity {
-        parser.require(XmlPullParser.START_TAG, ns, "entry")
-        var youtubeId = ""
-        var title = ""
-        var publishedAt = 0L
-
-        while (parser.next() != XmlPullParser.END_TAG) {
-            if (parser.eventType != XmlPullParser.START_TAG) continue
-            when (parser.name) {
-                "videoId" -> if (parser.namespace == ytNs) youtubeId = readText(parser, "videoId", ytNs) else skip(parser)
-                "title" -> title = readText(parser, "title", ns)
-                "published" -> {
-                    val dateStr = readText(parser, "published", ns)
-                    // Simplified: in real app use java.time or similar
-                    publishedAt = System.currentTimeMillis() 
+    suspend fun fetchVideos(client: OkHttpClient, channelId: String): List<VideoEntity> =
+        withContext(Dispatchers.IO) {
+            val request = Request.Builder().url(FEED_URL + channelId).build()
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    throw IOException("HTTP ${response.code} for channel $channelId")
                 }
-                else -> skip(parser)
+                val body = response.body ?: throw IOException("Empty feed for channel $channelId")
+                parse(Xml.newPullParser(), body.byteStream(), channelId)
             }
         }
-        return VideoEntity(
-            id = youtubeId,
-            title = title,
-            publishedAt = publishedAt,
-            channelId = channelPk,
-            thumbnailUrl = "",
-            videoUrl = "",
-            duration = 0,
-            category = ""
-        )
-    }
 
-    private fun readText(parser: XmlPullParser, tagName: String, namespace: String?): String {
-        parser.require(XmlPullParser.START_TAG, namespace, tagName)
-        var result = ""
-        if (parser.next() == XmlPullParser.TEXT) {
-            result = parser.text
-            parser.nextTag()
-        }
-        parser.require(XmlPullParser.END_TAG, namespace, tagName)
-        return result
-    }
-
-    private fun skip(parser: XmlPullParser) {
-        if (parser.eventType != XmlPullParser.START_TAG) throw IllegalStateException()
-        var depth = 1
-        while (depth != 0) {
-            when (parser.next()) {
-                XmlPullParser.END_TAG -> depth--
-                XmlPullParser.START_TAG -> depth++
+    /** Shorts are dropped: the feed links them as /shorts/ instead of /watch. */
+    fun parse(parser: XmlPullParser, input: InputStream, channelId: String): List<VideoEntity> {
+        parser.setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, true)
+        parser.setInput(input, null)
+        val videos = mutableListOf<VideoEntity>()
+        var entry: Entry? = null
+        while (parser.next() != XmlPullParser.END_DOCUMENT) {
+            val current = entry
+            when {
+                parser.eventType == XmlPullParser.START_TAG && parser.isAtom("entry") -> entry = Entry()
+                parser.eventType == XmlPullParser.START_TAG && current != null -> current.read(parser)
+                parser.eventType == XmlPullParser.END_TAG && parser.isAtom("entry") -> {
+                    current?.toVideo(channelId)?.let(videos::add)
+                    entry = null
+                }
             }
+        }
+        return videos
+    }
+
+    private fun XmlPullParser.isAtom(tag: String) = namespace == ATOM && name == tag
+
+    private class Entry {
+        private var videoId = ""
+        private var title = ""
+        private var published = ""
+        private var link = ""
+        private var thumbnail = ""
+
+        fun read(parser: XmlPullParser) {
+            when (parser.namespace to parser.name) {
+                YT to "videoId" -> videoId = parser.nextText()
+                ATOM to "title" -> title = parser.nextText()
+                ATOM to "published" -> published = parser.nextText()
+                ATOM to "link" -> link = parser.getAttributeValue(null, "href").orEmpty()
+                MEDIA to "thumbnail" -> thumbnail = parser.getAttributeValue(null, "url").orEmpty()
+            }
+        }
+
+        fun toVideo(channelId: String): VideoEntity? {
+            if (videoId.isEmpty() || "/shorts/" in link) return null
+            val publishedAt = runCatching { OffsetDateTime.parse(published).toInstant().toEpochMilli() }
+                .getOrNull() ?: return null
+            return VideoEntity(
+                id = videoId,
+                title = title,
+                publishedAt = publishedAt,
+                channelId = channelId,
+                thumbnailUrl = thumbnail,
+            )
         }
     }
 }

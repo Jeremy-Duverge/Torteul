@@ -7,6 +7,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.totoprout.torteul.data.local.TorteulDatabase
 import com.totoprout.torteul.data.local.entities.CategoryEntity
 import com.totoprout.torteul.data.local.entities.ChannelEntity
+import com.totoprout.torteul.data.local.entities.VideoEntity
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -20,6 +21,7 @@ import java.io.IOException
 class DatabaseTest {
     private lateinit var categoryDao: CategoryDao
     private lateinit var channelDao: ChannelDao
+    private lateinit var videoDao: VideoDao
     private lateinit var db: TorteulDatabase
 
     @Before
@@ -29,6 +31,7 @@ class DatabaseTest {
             context, TorteulDatabase::class.java).build()
         categoryDao = db.categoryDao()
         channelDao = db.channelDao()
+        videoDao = db.videoDao()
     }
 
     @After
@@ -40,23 +43,26 @@ class DatabaseTest {
     @Test
     @Throws(Exception::class)
     fun writeCategoryAndReadInList() = runBlocking {
-        val category = CategoryEntity(name = "Tech", displayOrder = 1)
-        val categoryId = categoryDao.insertCategory(category)
-        
+        categoryDao.insertCategory(CategoryEntity(name = "Tech"))
+
         val allCategories = categoryDao.getAllCategories().first()
-        assertEquals(allCategories[0].name, "Tech")
-        assertEquals(allCategories[0].id, categoryId)
+        assertEquals(listOf("Tech"), allCategories.map { it.name })
     }
 
     @Test
     @Throws(Exception::class)
-    fun writeChannelAndReadByCategory() = runBlocking {
-        val categoryId = categoryDao.insertCategory(CategoryEntity(name = "Tech", displayOrder = 1))
-        val channel = ChannelEntity(youtubeId = "UC123", title = "TechChannel", categoryId = categoryId)
-        channelDao.insertChannel(channel)
+    fun feedKeepsOnlySelectedCategories() = runBlocking {
+        channelDao.insertChannel(ChannelEntity(id = "UC1", title = "TechChannel", category = "Tech"))
+        channelDao.insertChannel(ChannelEntity(id = "UC2", title = "Other"))
+        videoDao.upsertVideos(
+            listOf(
+                VideoEntity("v1", "Tech video", 2_000L, "UC1", ""),
+                VideoEntity("v2", "Other video", 1_000L, "UC2", ""),
+            )
+        )
 
-        val channels = channelDao.getChannelsByCategory(categoryId).first()
-        assertEquals(channels[0].title, "TechChannel")
-        assertEquals(channels[0].categoryId, categoryId)
+        val feed = videoDao.getFeedForCategories(listOf("Tech")).first()
+        assertEquals(listOf("v1"), feed.map { it.video.id })
+        assertEquals("TechChannel", feed.single().channelTitle)
     }
 }
